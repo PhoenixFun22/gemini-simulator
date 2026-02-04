@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Simulation Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .loading-ring {
+            animation: spin 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .token {
+            display: inline;
+            opacity: 0;
+            filter: blur(4px);
+            transform: translateY(2px);
+            animation: tokenAppear 0.3s ease-out forwards;
+        }
+        @keyframes tokenAppear {
+            to { opacity: 1; filter: blur(0); transform: translateY(0); }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+        .chat-container {
+            scroll-behavior: smooth;
+        }
+        .bg-dark-sidebar { background-color: #0f172a; }
+        .bg-dark-main { background-color: #1e293b; }
+        
+        .thinking-label {
+            animation: slideIn 0.4s ease-out forwards;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .drop-zone {
+            transition: all 0.2s ease;
+            border: 2px dashed #334155;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+            transform: scale(1.02);
+        }
+    </style>
+</head>
+<body class="bg-dark-main font-sans text-slate-100 h-screen overflow-hidden">
+
+<div id="app" class="flex h-full">
+    <!-- LEFT: EDITOR INTERFACE -->
+    <div id="editor-side" class="w-1/2 p-6 overflow-y-auto border-r border-slate-700 bg-dark-sidebar custom-scrollbar">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">Sim Studio</h1>
+            <div class="space-x-2">
+                <button onclick="addNewExchange()" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition text-slate-300 border border-slate-700">
+                    + Add Step
+                </button>
+                <button id="run-btn" onclick="runSimulation()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-semibold transition shadow-lg active:scale-95">
+                    Run Simulation
+                </button>
+            </div>
+        </div>
+
+        <div id="script-container" class="space-y-6 pb-24">
+            <!-- Steps injected here -->
+        </div>
+    </div>
+
+    <!-- RIGHT: SIMULATION INTERFACE -->
+    <div id="sim-side" class="w-1/2 bg-[#0b111e] flex flex-col relative">
+        <div class="p-4 border-b border-slate-800 bg-[#0b111e]/80 backdrop-blur-md sticky top-0 z-20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-gradient-to-tr from-blue-600 to-cyan-400 rounded-full flex items-center justify-center shadow-lg">
+                    <svg viewBox="0 0 24 24" class="w-5 h-5 text-white fill-current"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>
+                </div>
+                <span class="font-semibold text-slate-100 tracking-tight">Gemini</span>
+            </div>
+            <button onclick="resetSim()" class="text-xs text-slate-500 hover:text-blue-400 transition">Reset All</button>
+        </div>
+
+        <div id="chat-history" class="flex-1 overflow-y-auto p-8 space-y-10 chat-container custom-scrollbar">
+            <div id="empty-state" class="flex flex-col items-center justify-center h-full text-slate-600 space-y-4">
+                <div class="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+                <p class="text-lg font-medium tracking-tight text-slate-400">Ready to play simulation!</p>
+            </div>
+        </div>
+
+        <div class="p-8 bg-transparent">
+            <div class="max-w-2xl mx-auto relative">
+                <div id="fake-input-box" class="w-full bg-[#1e293b] rounded-3xl px-6 py-4 text-slate-500 text-sm flex items-center justify-between border border-slate-700/50 transition-all duration-300">
+                    <span id="typing-text" class="truncate mr-4">Ask Gemini...</span>
+                    <div class="flex items-center gap-3 opacity-40">
+                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current text-blue-500"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const scriptContainer = document.getElementById('script-container');
+    const chatHistory = document.getElementById('chat-history');
+    const typingText = document.getElementById('typing-text');
+    const fakeInputBox = document.getElementById('fake-input-box');
+
+    const TIME_UNIT = 10; 
+
+    let script = [
+        { role: 'user', content: '', mediaUrl: '', mediaType: 'image', preDelay: 50 },
+        { role: 'ai', thinkingSegments: [], content: '', aiMediaUrl: '', aiMediaType: 'image', tokenDelay: 7 }
+    ];
+
+    function renderEditor() {
+        scriptContainer.innerHTML = '';
+        script.forEach((step, idx) => {
+            const card = document.createElement('div');
+            card.className = `p-5 rounded-2xl border transition-all ${step.role === 'user' ? 'border-blue-900/40 bg-blue-900/5' : 'border-purple-900/40 bg-purple-900/5'}`;
+            
+            let html = `
+                <div class="flex justify-between items-center mb-4">
+                    <span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest ${step.role === 'user' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}">${step.role}</span>
+                    <button onclick="removeStep(${idx})" class="text-slate-600 hover:text-red-400 transition">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <textarea onchange="updateStep(${idx}, 'content', this.value)" placeholder="Enter ${step.role} message..." class="w-full p-3 text-sm bg-slate-800/30 border border-slate-700/50 text-slate-100 rounded-xl focus:ring-1 focus:ring-blue-500 outline-none h-20 transition-all">${step.content || ''}</textarea>
+            `;
+
+            const mediaUrl = step.role === 'user' ? step.mediaUrl : step.aiMediaUrl;
+            const mediaType = step.role === 'user' ? step.mediaType : step.aiMediaType;
+
+            html += `
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="drop-zone relative h-24 rounded-xl flex flex-col items-center justify-center text-center p-2 cursor-pointer bg-slate-800/20 hover:bg-slate-800/40 overflow-hidden" 
+                         id="drop-${idx}"
+                         onclick="triggerUpload(${idx})">
+                        ${mediaUrl ? renderPreview(mediaUrl, mediaType) : `
+                            <svg class="w-6 h-6 text-slate-600 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <span class="text-[9px] text-slate-500 uppercase font-bold">Upload Media</span>
+                        `}
+                        <input type="file" id="file-${idx}" class="hidden" accept="image/*,video/*" onchange="processFile(${idx}, this.files[0])">
+                    </div>
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-[9px] font-bold text-slate-500 mb-1 uppercase">Media Type</label>
+                            <select onchange="updateStep(${idx}, '${step.role === 'user' ? 'mediaType' : 'aiMediaType'}', this.value)" class="w-full p-2 text-xs bg-slate-800/50 border border-slate-700/50 rounded-lg text-slate-300">
+                                <option value="image" ${mediaType === 'image' ? 'selected' : ''}>Image</option>
+                                <option value="video" ${mediaType === 'video' ? 'selected' : ''}>Video</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-slate-500 mb-1 uppercase">${step.role === 'user' ? 'Sim Delay (Units)' : 'Token Delay (Speed)'}</label>
+                            <input type="number" onchange="updateStep(${idx}, '${step.role === 'user' ? 'preDelay' : 'tokenDelay'}', this.value)" value="${step.role === 'user' ? step.preDelay : step.tokenDelay}" class="w-full p-2 text-xs bg-slate-800/50 border border-slate-700/50 rounded-lg text-slate-300">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (step.role === 'ai') {
+                html += `
+                    <div class="pt-2 border-t border-slate-700/30">
+                        <label class="block text-[9px] font-bold text-slate-500 mb-1 uppercase">Thinking Phases (Phase:Duration, ...)</label>
+                        <input type="text" onchange="updateSegments(${idx}, this.value)" value="${step.thinkingSegments ? step.thinkingSegments.map(s => `${s.label}:${s.duration}`).join(', ') : ''}" placeholder="e.g. Analyzing:100, Planning:50" class="w-full p-2 text-xs bg-slate-800/50 border border-slate-700/50 rounded-lg text-slate-300">
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            card.innerHTML = html;
+            scriptContainer.appendChild(card);
+            
+            const zone = document.getElementById(`drop-${idx}`);
+            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                if (e.dataTransfer.files.length) processFile(idx, e.dataTransfer.files[0]);
+            });
+        });
+    }
+
+    function renderPreview(url, type) {
+        if (type === 'video') {
+            return `<video src="${url}" class="h-full w-full object-cover opacity-60 pointer-events-none" muted autoplay loop playsinline></video>`;
+        }
+        return `<img src="${url}" class="h-full w-full object-cover opacity-60">`;
+    }
+
+    function triggerUpload(idx) { document.getElementById(`file-${idx}`).click(); }
+
+    function processFile(idx, file) {
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const isVideo = file.type.startsWith('video');
+        const type = isVideo ? 'video' : 'image';
+        
+        if (script[idx].role === 'user') {
+            script[idx].mediaUrl = url;
+            script[idx].mediaType = type;
+        } else {
+            script[idx].aiMediaUrl = url;
+            script[idx].aiMediaType = type;
+        }
+        renderEditor();
+    }
+
+    function updateStep(idx, key, val) { script[idx][key] = val; }
+    function updateSegments(idx, val) {
+        if (!val.trim()) { script[idx].thinkingSegments = []; return; }
+        script[idx].thinkingSegments = val.split(',').map(p => {
+            const [label, dur] = p.trim().split(':');
+            return { label: label || 'Thinking', duration: parseInt(dur) || 50 };
+        }).filter(s => s.label);
+    }
+
+    function removeStep(idx) { script.splice(idx, 1); renderEditor(); }
+
+    function addNewExchange() {
+        script.push(
+            { role: 'user', content: '', mediaUrl: '', mediaType: 'image', preDelay: 50 },
+            { role: 'ai', thinkingSegments: [], content: '', aiMediaUrl: '', aiMediaType: 'image', tokenDelay: 7 }
+        );
+        renderEditor();
+    }
+
+    async function sleep(units) { return new Promise(resolve => setTimeout(resolve, units * TIME_UNIT)); }
+
+    async function waitForVideo(videoElement) {
+        if (!videoElement) return;
+        return new Promise(resolve => {
+            videoElement.onended = () => resolve();
+            videoElement.onerror = (err) => {
+                console.error("Video error during playback:", err);
+                resolve();
+            };
+            
+            const playPromise = videoElement.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(e => {
+                    console.warn("Audio blocked by browser, playing muted:", e);
+                    videoElement.muted = true;
+                    videoElement.play().catch(e2 => resolve());
+                });
+            }
+        });
+    }
+
+    async function runSimulation() {
+        const emptyState = document.getElementById('empty-state');
+        if (emptyState) emptyState.remove();
+        chatHistory.innerHTML = '';
+        typingText.innerText = 'Ask Gemini...';
+        
+        for (let i = 0; i < script.length; i++) {
+            const step = script[i];
+            if (step.role === 'user') {
+                fakeInputBox.classList.add('border-blue-500/50', 'bg-slate-800');
+                typingText.innerText = '';
+                typingText.classList.remove('text-slate-500');
+                typingText.classList.add('text-slate-100');
+                
+                if (step.content) {
+                    const chars = step.content.split('');
+                    for (let char of chars) {
+                        // Ensure spaces are respected
+                        if (char === ' ') {
+                            typingText.innerHTML += '&nbsp;';
+                        } else {
+                            typingText.innerText += char;
+                        }
+                        await sleep(3);
+                    }
+                }
+                await sleep(20);
+
+                const videoRef = await addMessageToChat('user', step.content, step.mediaUrl, step.mediaType);
+                if (videoRef) await waitForVideo(videoRef);
+
+                typingText.innerText = 'Ask Gemini...';
+                typingText.classList.add('text-slate-500');
+                fakeInputBox.classList.remove('border-blue-500/50', 'bg-slate-800');
+                await sleep(step.preDelay || 50);
+            } else {
+                const aiContainer = createAIMessagePlaceholder();
+                chatHistory.appendChild(aiContainer);
+                scrollChat();
+                const statusEl = aiContainer.querySelector('.ai-status');
+                const textEl = aiContainer.querySelector('.ai-text');
+                const ringEl = aiContainer.querySelector('.loading-ring');
+
+                if (step.thinkingSegments?.length) {
+                    for (let segment of step.thinkingSegments) {
+                        statusEl.innerHTML = `
+                            <div class="flex items-center gap-3">
+                                <span class="flex items-center gap-2 text-slate-400 italic text-base">
+                                    <span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> thinking...
+                                </span> 
+                                <span class="text-slate-100 font-bold text-base thinking-label">${segment.label}</span>
+                            </div>`;
+                        await sleep(segment.duration);
+                    }
+                } else {
+                    statusEl.innerHTML = `<span class="flex items-center gap-2 text-slate-400 italic text-base"><span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> thinking...</span>`;
+                    await sleep(40);
+                }
+
+                statusEl.innerHTML = `<span class="text-slate-500 font-bold text-sm flex items-center gap-1.5"><svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> Finished</span>`;
+                
+                if (step.aiMediaUrl) {
+                    const mediaContainer = document.createElement('div');
+                    mediaContainer.className = "mb-4 overflow-hidden rounded-2xl border border-slate-700 shadow-xl opacity-0 translate-y-4 transition-all duration-700";
+                    let aiVideoRef = null;
+                    if (step.aiMediaType === 'video') {
+                        aiVideoRef = document.createElement('video');
+                        aiVideoRef.src = step.aiMediaUrl;
+                        aiVideoRef.className = "w-full max-w-md block";
+                        aiVideoRef.autoplay = true;
+                        aiVideoRef.playsInline = true;
+                        aiVideoRef.controls = false;
+                        aiVideoRef.load();
+                        mediaContainer.appendChild(aiVideoRef);
+                    } else {
+                        const aiImg = document.createElement('img');
+                        aiImg.src = step.aiMediaUrl;
+                        aiImg.className = "w-full max-w-md block";
+                        mediaContainer.appendChild(aiImg);
+                    }
+                    
+                    textEl.appendChild(mediaContainer);
+                    setTimeout(() => mediaContainer.classList.add('opacity-100', 'translate-y-0'), 50);
+                    
+                    if (aiVideoRef) await waitForVideo(aiVideoRef);
+                    await sleep(30);
+                }
+
+                if (step.content) {
+                    const words = step.content.split(' ');
+                    for (let word of words) {
+                        const span = document.createElement('span');
+                        span.className = 'token';
+                        span.innerText = word + ' ';
+                        textEl.appendChild(span);
+                        scrollChat();
+                        await sleep(step.tokenDelay || 7);
+                    }
+                }
+                ringEl.style.animation = 'none';
+                ringEl.classList.add('opacity-10');
+            }
+        }
+    }
+
+    function scrollChat() { chatHistory.scrollTo({ top: chatHistory.scrollHeight, behavior: 'smooth' }); }
+
+    async function addMessageToChat(role, content, url, type) {
+        const div = document.createElement('div');
+        div.className = "flex flex-col items-end mb-2 animate-in fade-in slide-in-from-bottom-4 duration-500";
+        
+        let videoEl = null;
+        let mediaHtml = '';
+        
+        if (url) {
+            if (type === 'video') {
+                videoEl = document.createElement('video');
+                videoEl.src = url;
+                videoEl.className = "max-w-sm rounded-xl mb-4 border border-slate-600 shadow-lg";
+                videoEl.autoplay = true;
+                videoEl.playsInline = true;
+                videoEl.controls = false;
+                videoEl.load();
+            } else {
+                mediaHtml = `<img src="${url}" class="max-w-sm rounded-xl mb-4 border border-slate-600 shadow-lg">`;
+            }
+        }
+
+        const msgBox = document.createElement('div');
+        msgBox.className = "max-w-[85%] bg-slate-800 rounded-3xl rounded-tr-none px-6 py-4 shadow-lg border border-slate-700/50";
+        
+        const contentArea = document.createElement('div');
+        if (videoEl) contentArea.appendChild(videoEl);
+        
+        const textWrapper = document.createElement('p');
+        textWrapper.className = "text-slate-100 text-[15px] leading-relaxed font-light whitespace-pre-wrap";
+        textWrapper.innerHTML = `${mediaHtml}${content || ''}`;
+        
+        msgBox.appendChild(contentArea);
+        msgBox.appendChild(textWrapper);
+        div.appendChild(msgBox);
+        
+        const label = document.createElement('span');
+        label.className = "text-[10px] text-slate-600 mt-2 mr-2 uppercase font-bold tracking-widest";
+        label.innerText = "You";
+        div.appendChild(label);
+        
+        chatHistory.appendChild(div);
+        scrollChat();
+        
+        return videoEl;
+    }
+
+    function createAIMessagePlaceholder() {
+        const div = document.createElement('div');
+        div.className = "flex gap-5 group";
+        div.innerHTML = `
+            <div class="relative flex-shrink-0 self-start mt-1">
+                <div class="loading-ring absolute -inset-1 border-2 border-transparent border-t-blue-500 border-l-cyan-400 rounded-full opacity-80"></div>
+                <div class="w-10 h-10 bg-[#1e293b] rounded-full flex items-center justify-center relative z-10 border border-slate-700 shadow-inner">
+                    <svg viewBox="0 0 24 24" class="w-6 h-6 text-blue-400 fill-current"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>
+                </div>
+            </div>
+            <div class="flex-1 pt-1">
+                <div class="ai-status min-h-[32px] mb-2"></div>
+                <div class="ai-text text-slate-100 text-[15px] leading-relaxed font-light"></div>
+            </div>
+        `;
+        return div;
+    }
+
+    function resetSim() {
+        script = [
+            { role: 'user', content: '', mediaUrl: '', mediaType: 'image', preDelay: 50 },
+            { role: 'ai', thinkingSegments: [], content: '', aiMediaUrl: '', aiMediaType: 'image', tokenDelay: 7 }
+        ];
+        renderEditor();
+        chatHistory.innerHTML = '<div id="empty-state" class="flex flex-col items-center justify-center h-full text-slate-400"><p>Simulation Reset.</p></div>';
+    }
+
+    renderEditor();
+</script>
+</body>
+</html>
